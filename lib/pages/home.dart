@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:band_names/models/band.dart';
+import 'package:band_names/services/socket_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -13,16 +15,35 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   //Me creo mi lista de bandas:
-  List<Band> bands = [
-    //Se leerán desde el backend
-    Band(id: '1', name: 'Metallica', votes: 5),
-    Band(id: '2', name: 'Queen', votes: 6),
-    Band(id: '3', name: 'Héroes del Silencio', votes: 3),
-    Band(id: '4', name: 'Bon Jovi', votes: 6)
-  ];
+  List<Band> bands = []; //Se leerán desde el backend
+
+  @override
+  void initState() {
+    final socketService = Provider.of<SocketService>(context,
+        listen:
+            false); //No necesito redibujar nada (x eso false), xq estoy en el initState
+    socketService.socket.on('active-bands', (payload) {
+      //Para escuchar el evento 'active-bands'. Payload es la data
+      bands = (payload as List).map((band) => Band.fromMap(band)).toList();
+      setState(() {});
+    });
+
+    super.initState();
+  }
+
+  //Para cuando se destruya el home (aunque aquí no sucederá):
+  @override
+  void dispose() {
+    final socketService = Provider.of<SocketService>(context, listen: false);
+    socketService.socket.off(
+        'active-bands'); //Hacemos la limpieza. Ya dejo de escuchar ese evento.
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final socketService = Provider.of<SocketService>(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -31,6 +52,17 @@ class _HomePageState extends State<HomePage> {
         ),
         backgroundColor: Colors.white,
         elevation: 1,
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 10),
+            child: (socketService.serverStatus == ServerStatus.online)
+                ? Icon(Icons.check_circle, color: Colors.blue.shade300)
+                : const Icon(
+                    Icons.offline_bolt,
+                    color: Colors.red,
+                  ),
+          ),
+        ],
       ),
       body: ListView.builder(
         itemCount: bands.length,
@@ -45,7 +77,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _bandTile(Band band) {
-    return Dismissible( //para poder eliminar de la lista moviendo hacia el lado
+    final socketService = Provider.of<SocketService>(context, listen: false);
+
+    return Dismissible(
+      //para poder eliminar de la lista moviendo hacia el lado
       key: Key(band.id),
       direction: DismissDirection.startToEnd, //no funciona
       onDismissed: (direction) {
@@ -56,7 +91,10 @@ class _HomePageState extends State<HomePage> {
         color: Colors.red,
         child: const Align(
           alignment: Alignment.centerLeft,
-          child: Text('Delete band', style: TextStyle(color: Colors.white),),
+          child: Text(
+            'Delete band',
+            style: TextStyle(color: Colors.white),
+          ),
         ),
       ),
       child: ListTile(
@@ -69,7 +107,9 @@ class _HomePageState extends State<HomePage> {
           '${band.votes}',
           style: const TextStyle(fontSize: 15),
         ),
-        onTap: () {},
+        onTap: () {
+          socketService.socket.emit('vote-band', {'id': band.id});
+        },
       ),
     );
   }
@@ -132,7 +172,8 @@ class _HomePageState extends State<HomePage> {
   void addBandToList(String name) {
     if (name.length > 1) {
       //Podemos agregar
-      bands.add( Band(id: '15', name: name, votes: 0)); //Fernando ocupa "this.bands.add"
+      bands.add(Band(
+          id: '15', name: name, votes: 0)); //Fernando ocupa "this.bands.add"
       setState(() {});
     }
     Navigator.pop(context);
